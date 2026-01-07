@@ -92,7 +92,7 @@ async def process_audio(file: UploadFile = File(...)):
     try:
         # Gemini 1.5 Flash に音声とプロンプトを同時に投げる
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.5-flash-lite",
             contents=[
                 types.Content(
                     parts=[
