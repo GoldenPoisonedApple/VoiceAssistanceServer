@@ -31,14 +31,21 @@ class NotificationService:
         }
 
         try:
-            async with httpx.AsyncClient() as client:
+            # タイムアウトを10秒に延長（デフォルト5秒だとDiscord側の遅延で失敗することがある）
+            async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.post(self.webhook_url, json=payload)
                 response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            # 400 Bad Requestなどの場合、Discordからのレスポンス本文に理由が書いてある
+            logger.error(f"Discord Webhook returned error: {e}\nResponse body: {e.response.text}")
         except Exception as e:
-            logger.error(f"Failed to send Discord notification: {e}")
+            logger.error(f"Failed to send Discord notification: {e}", exc_info=True)
 
     async def notify_success(self, user_ip: str, ai_response: str, process_time: float, llm_time: float, tts_time: float):
         """成功通知"""
+        # DiscordのField Valueは空だと400エラーになるため、空の場合は代替テキストを入れる
+        display_response = ai_response[:1024] if ai_response and ai_response.strip() else "(No response text)"
+        
         fields = [
             {
                 "name": "⏳ Timings", 
@@ -46,7 +53,7 @@ class NotificationService:
                 "inline": True
             },
             {"name": "Client", "value": user_ip, "inline": True},
-            {"name": "AI Response", "value": ai_response[:1024], "inline": False} # 1024文字制限対策
+            {"name": "AI Response", "value": display_response, "inline": False} # 1024文字制限対策
         ]
         await self.send_notification(
             title="✨ Audio Processed Successfully",
