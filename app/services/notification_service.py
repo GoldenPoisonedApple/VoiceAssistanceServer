@@ -1,0 +1,72 @@
+import httpx
+import logging
+from app.core.config import settings
+from typing import Optional, Dict, Any
+import json
+import traceback
+
+logger = logging.getLogger(__name__)
+
+class NotificationService:
+    def __init__(self):
+        self.webhook_url = settings.DISCORD_WEBHOOK_URL
+    
+    async def send_notification(self, title: str, description: str, color: int = 0x00ff00, fields: list = None):
+        """
+        Discord WebhookにEmbedメッセージを送信する
+        """
+        if not self.webhook_url:
+            logger.warning("Discord Webhook URL is not set. Skipping notification.")
+            return
+
+        embed = {
+            "title": title,
+            "description": description,
+            "color": color,
+            "fields": fields or []
+        }
+
+        payload = {
+            "embeds": [embed]
+        }
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(self.webhook_url, json=payload)
+                response.raise_for_status()
+        except Exception as e:
+            logger.error(f"Failed to send Discord notification: {e}")
+
+    async def notify_success(self, user_ip: str, ai_response: str, process_time: float):
+        """成功通知"""
+        fields = [
+            {"name": "Processing Time", "value": f"{process_time:.2f}s", "inline": True},
+            {"name": "Client", "value": user_ip, "inline": True},
+            {"name": "AI Response", "value": ai_response[:1024], "inline": False} # 1024文字制限対策
+        ]
+        await self.send_notification(
+            title="✨ Audio Processed Successfully",
+            description="音声処理が完了しました。",
+            color=0x57F287, # Green
+            fields=fields
+        )
+
+    async def notify_error(self, error: Exception, context: str = ""):
+        """エラー通知"""
+        tb = traceback.format_exc()
+        # スタックトレースが長すぎる場合は切り詰める(Discord制限: 4096文字だが安全マージンをとる)
+        if len(tb) > 1000:
+            tb = tb[-1000:]
+        
+        description = f"**Error**: {str(error)}\n**Context**: {context}"
+        
+        fields = [
+             {"name": "Traceback", "value": f"```python\n{tb}\n```", "inline": False}
+        ]
+
+        await self.send_notification(
+            title="🚨 Server Error Occurred",
+            description=description,
+            color=0xED4245, # Red
+            fields=fields
+        )
