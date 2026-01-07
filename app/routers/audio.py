@@ -64,7 +64,9 @@ async def process_audio(
             notification_service.notify_success,
             user_ip=client_host,
             ai_response=ai_text,
-            process_time=total_time
+            process_time=total_time,
+            llm_time=llm_duration,
+            tts_time=tts_duration
         )
 
         return {

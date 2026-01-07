@@ -37,10 +37,14 @@ class NotificationService:
         except Exception as e:
             logger.error(f"Failed to send Discord notification: {e}")
 
-    async def notify_success(self, user_ip: str, ai_response: str, process_time: float):
+    async def notify_success(self, user_ip: str, ai_response: str, process_time: float, llm_time: float, tts_time: float):
         """成功通知"""
         fields = [
-            {"name": "Processing Time", "value": f"{process_time:.2f}s", "inline": True},
+            {
+                "name": "⏳ Timings", 
+                "value": f"**Total:** {process_time:.2f}s\t**LLM:** {llm_time:.2f}s\t**TTS:** {tts_time:.2f}s", 
+                "inline": True
+            },
             {"name": "Client", "value": user_ip, "inline": True},
             {"name": "AI Response", "value": ai_response[:1024], "inline": False} # 1024文字制限対策
         ]
