@@ -8,6 +8,7 @@ ShizukuServerは、スマートホーム向けの音声アシスタントバッ�
 - **音声対話機能**: ユーザーの音声を直接 Gemini に送信し、音声認識と応答生成を一括で行います (Multimodal)。
 - **音声合成 (TTS)**: 生成された応答テキストを VOICEVOX で読み上げます。
 - **冗長構成**: VOICEVOX サーバーへの接続において、メインサーバー (GPU想定) が応答しない場合、自動的にローカルサーバー (CPU想定) へフォールバックします。
+- **通知機能**: Discord Webhook を介して、処理の成功通知（処理詳細時間付き）やエラー通知を送信します。
 
 ## 必要要件
 
@@ -41,6 +42,7 @@ touch .env
 **.env**:
 ```properties
 GEMINI_API_KEY=your_api_key_here
+DISCORD_WEBHOOK_URL=your_webhook_url_here  # Optional: 指定しない場合はデフォルトまたは無効
 ```
 
 ### 4. VOICEVOXの設定
