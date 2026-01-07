@@ -1,16 +1,18 @@
 from fastapi import APIRouter, UploadFile, File, Depends
 from app.services.llm_service import LLMService
 from app.services.tts_service import TTSService
+from functools import lru_cache
 import base64
 import time
 import logging
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
+@lru_cache()
 def get_llm_service():
-	return LLMService()
+    return LLMService()
 
+@lru_cache()
 def get_tts_service():
 	return TTSService()
 
