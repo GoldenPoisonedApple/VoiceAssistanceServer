@@ -82,3 +82,8 @@ sudo systemctl status shizuku-server
 ```bash
 sudo journalctl -u shizuku-server -f
 ```
+
+- コードを変更した場合
+```bash
+sudo systemctl restart shizuku-server
+```
