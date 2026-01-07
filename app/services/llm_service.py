@@ -2,6 +2,7 @@ from google import genai
 from google.genai import types
 from app.core.config import settings
 import logging
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +14,12 @@ class LLMService:
 
 	def generate_response(self, audio_bytes: bytes, prompt_text: str = "この発言に応答してください。") -> str:
 		last_exception = None
+		
+		# 現在日時を取得してフォーマット
+		current_time_str = datetime.now().strftime("%Y年%m月%d日 %H:%M")
+		
+		# システムプロンプトに現在日時を注入
+		dynamic_system_instruction = f"現在日時: {current_time_str}\n{settings.SYSTEM_INSTRUCTION}"
 
 		# 定義されたモデル順に試行する
 		for model_name in settings.GEMINI_MODELS:
@@ -29,9 +36,11 @@ class LLMService:
 							]
 						)
 					],
-					config={
-						"system_instruction": settings.SYSTEM_INSTRUCTION
-					}
+					config=types.GenerateContentConfig(
+						system_instruction=dynamic_system_instruction,
+						tools=[types.Tool(google_search=types.GoogleSearch())],
+						response_mime_type="text/plain"
+					)
 				)
 				
 				# 成功したらモデル名をログに残してリターン
