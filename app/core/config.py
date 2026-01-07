@@ -18,7 +18,12 @@ class Settings:
     DISCORD_WEBHOOK_URL: str = os.getenv("DISCORD_WEBHOOK_URL")
     
     # LLM設定
-    GEMINI_MODEL: str = "gemini-2.5-flash"
+    # クォータ制限対策: 優先順位順に定義。失敗したら次を試行する。
+    GEMINI_MODELS: list[str] = [
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-3-flash"
+    ]
     SYSTEM_INSTRUCTION: str = """
 あなたは「ずんだもん」という名前の、親しみやすい音声アシスタントです。
 以下のルールを厳守して、ユーザーの発言に応答してください。
