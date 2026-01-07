@@ -1,13 +1,11 @@
 from fastapi import FastAPI, UploadFile, File
-from faster_whisper import WhisperModel
 import uvicorn
-import shutil
-import os
 import time
 import base64
 import requests
-import json
+import os
 from google import genai
+from google.genai import types
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -21,76 +19,77 @@ if not API_KEY:
 
 client = genai.Client(api_key=API_KEY)
 
+# 音声入力に対するシステムプロンプト
 SYSTEM_INSTRUCTION = """
-あなたは優秀な音声アシスタントです。以下のルールを厳守してください。
+あなたはスマートホームの音声アシスタントです。
+ユーザーの音声入力を聞き取り、以下のルールで応答してください。
 1. 返答は短く、簡潔に（1〜2文程度）。
 2. 口調は親しみやすく、しかし丁寧すぎない「です・ます」調。
-3. Markdown記法や絵文字、URLは一切使用しない。読み上げに適したテキストのみを出力する。
+3. Markdown記法（太字など）や絵文字、URLは一切使用しない。
 """
 
-# --- Whisper設定 ---
-MODEL_SIZE = "medium"
-print(f"Loading Whisper model ({MODEL_SIZE})...")
-stt_model = WhisperModel(MODEL_SIZE, device="cpu", compute_type="int8")
-
 # --- VOICEVOX設定 ---
-VOICEVOX_HOST = "127.0.0.1" # Dockerが同じホストで動いている前提
+VOICEVOX_HOST = "127.0.0.1"
 VOICEVOX_PORT = 50021
-SPEAKER_ID = 3 # 3: ずんだもん(ノーマル), 2: 四国めたん(ノーマル) 等に変更可
+SPEAKER_ID = 3 # ずんだもん
 
 def generate_voice(text: str, speaker: int = SPEAKER_ID) -> bytes:
-    """VOICEVOX Engineを利用してWAVデータを生成する"""
     base_url = f"http://{VOICEVOX_HOST}:{VOICEVOX_PORT}"
-    
-    # 1. 音声合成用のクエリを作成 (Audio Query)
-    params = {"text": text, "speaker": speaker}
-    res1 = requests.post(f"{base_url}/audio_query", params=params)
-    if res1.status_code != 200:
-        print(f"[TTS Error] Query failed: {res1.text}")
-        return None
-    query_data = res1.json()
+    try:
+        # Audio Query
+        params = {"text": text, "speaker": speaker}
+        res1 = requests.post(f"{base_url}/audio_query", params=params)
+        res1.raise_for_status()
+        query_data = res1.json()
 
-    # 2. 音声合成を実行 (Synthesis)
-    # 必要ならここで query_data['speedScale'] = 1.2 など速度調整が可能
-    res2 = requests.post(f"{base_url}/synthesis", params={"speaker": speaker}, json=query_data)
-    if res2.status_code != 200:
-        print(f"[TTS Error] Synthesis failed: {res2.text}")
+        # Synthesis
+        res2 = requests.post(f"{base_url}/synthesis", params={"speaker": speaker}, json=query_data)
+        res2.raise_for_status()
+        return res2.content
+    except Exception as e:
+        print(f"[TTS Error] {e}")
         return None
-
-    return res2.content
 
 @app.post("/process-audio")
 async def process_audio(file: UploadFile = File(...)):
     total_start = time.time()
     
-    # 1. STT
-    temp_filename = f"temp_{file.filename}"
-    with open(temp_filename, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    # 音声ファイルをメモリ上に読み込む
+    file_bytes = await file.read()
     
-    segments, _ = stt_model.transcribe(temp_filename, beam_size=5, language="ja")
-    user_text = "".join([segment.text for segment in segments])
-    os.remove(temp_filename)
-    
-    print(f"[STT] '{user_text}'")
-
-    if not user_text.strip():
-        return {"user_text": "", "ai_text": "", "audio_base64": None}
-
-    # 2. LLM
+    # 1. LLM (Audio -> Text & Response)
+    print("Sending audio to Gemini...")
     llm_start = time.time()
-    chat_response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=user_text,
-        config={"system_instruction": SYSTEM_INSTRUCTION}
-    )
-    ai_text = chat_response.text.strip()
-    print(f"[LLM] '{ai_text}' ({time.time() - llm_start:.2f}s)")
     
-    # 3. TTS
+    try:
+        # Gemini 1.5 Flash に音声とプロンプトを同時に投げる
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[
+                types.Content(
+                    parts=[
+                        types.Part.from_bytes(data=file_bytes, mime_type="audio/wav"),
+                        types.Part.from_text(text="この発言に応答してください。")
+                    ]
+                )
+            ],
+            config={
+                "system_instruction": SYSTEM_INSTRUCTION
+            }
+        )
+        ai_text = response.text.strip()
+    except Exception as e:
+        print(f"[LLM Error] {e}")
+        return {"user_text": "Error", "ai_text": "エラーが発生しました。", "audio_base64": None}
+
+    llm_duration = time.time() - llm_start
+    print(f"[LLM] '{ai_text}' ({llm_duration:.2f}s)")
+    
+    # 2. TTS (Voicevox)
     tts_start = time.time()
     audio_data = generate_voice(ai_text)
-    print(f"[TTS] Generated ({time.time() - tts_start:.2f}s)")
+    tts_duration = time.time() - tts_start
+    print(f"[TTS] Generated ({tts_duration:.2f}s)")
     
     audio_base64 = None
     if audio_data:
@@ -100,7 +99,7 @@ async def process_audio(file: UploadFile = File(...)):
     print(f"Total processing time: {total_time:.2f}s")
 
     return {
-        "user_text": user_text,
+        "user_text": "(Audio Input)", # STTをスキップしたためテキスト化はされません
         "ai_text": ai_text,
         "audio_base64": audio_base64
     }
