@@ -27,29 +27,57 @@ SYSTEM_INSTRUCTION = """
 2. 口調は親しみやすく、しかし丁寧すぎない「です・ます」調。
 3. Markdown記法（太字など）や絵文字、URLは一切使用しない。
 """
-
 # --- VOICEVOX設定 ---
-VOICEVOX_HOST = "127.0.0.1"
-VOICEVOX_PORT = 50021
+# デスクトップPC (GPU) のIPアドレス
+PRIMARY_HOST = "192.168.11.3"  # ★環境に合わせて変更してください
+PRIMARY_PORT = 50021
+
+# ローカルサーバー (CPU) のIPアドレス
+SECONDARY_HOST = "127.0.0.1"
+SECONDARY_PORT = 50021
+
+TIMEOUT = 0.5	# VOICEVOXサーバーへの接続タイムアウト（秒）
 SPEAKER_ID = 3 # ずんだもん
 
-def generate_voice(text: str, speaker: int = SPEAKER_ID) -> bytes:
-    base_url = f"http://{VOICEVOX_HOST}:{VOICEVOX_PORT}"
+def request_tts(host: str, port: int, text: str, speaker: int, timeout: float = None) -> bytes:
+    """指定されたホストのVOICEVOX Engineにリクエストを送る"""
+    base_url = f"http://{host}:{port}"
     try:
-        # Audio Query
+        # 1. Audio Query
+        # ホストが生きてるかのチェックも兼ねてtimeoutを設定
         params = {"text": text, "speaker": speaker}
-        res1 = requests.post(f"{base_url}/audio_query", params=params)
+        res1 = requests.post(f"{base_url}/audio_query", params=params, timeout=timeout)
         res1.raise_for_status()
         query_data = res1.json()
 
-        # Synthesis
-        res2 = requests.post(f"{base_url}/synthesis", params={"speaker": speaker}, json=query_data)
+        # 2. Synthesis
+        # 合成処理自体は時間がかかるため、timeoutは少し長めにとるか、Noneにする
+        # ただし、そもそもホストが生きてるかのチェックはqueryで済んでいる
+        res2 = requests.post(f"{base_url}/synthesis", params={"speaker": speaker}, json=query_data, timeout=None)
         res2.raise_for_status()
         return res2.content
     except Exception as e:
-        print(f"[TTS Error] {e}")
-        return None
+        # 呼び出し元でキャッチさせるために例外を再送出
+        raise e
 
+def generate_voice(text: str, speaker: int = SPEAKER_ID) -> bytes:
+    # 1. まずはデスクトップPC (GPU) にトライ
+    try:
+        # 接続確認も兼ねてAudioQueryを投げる。
+        # 0.2秒で繋がらなければPCは落ちているとみなす。
+        print(f"[TTS] Trying GPU Server ({PRIMARY_HOST})...")
+        return request_tts(PRIMARY_HOST, PRIMARY_PORT, text, speaker, timeout=TIMEOUT)
+    except Exception as e:
+        print(f"[TTS] GPU Server unreachable or failed: {e}")
+        print("[TTS] Falling back to Local CPU Server...")
+
+    # 2. ダメならローカル (CPU) で実行
+    try:
+        return request_tts(SECONDARY_HOST, SECONDARY_PORT, text, speaker, timeout=None)
+    except Exception as e:
+        print(f"[TTS Error] Local fallback also failed: {e}")
+        return None
+      
 @app.post("/process-audio")
 async def process_audio(file: UploadFile = File(...)):
     total_start = time.time()
