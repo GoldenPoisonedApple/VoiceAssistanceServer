@@ -73,12 +73,25 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 - **Parameters**:
   - `file`: 音声ファイル (`audio/wav` 推奨)
 
-#### レスポンス例
+#### レスポンス例 (成功時)
 
 ```json
 {
   "user_text": "(Audio Input)",
   "ai_text": "はい、電気をつけました。",
   "audio_base64": "UklGRi..."
+}
+```
+
+#### エラーハンドリング
+
+本サーバーは標準的なHTTPステータスコードを使用します。
+
+- **200 OK**: 成功。`audio_base64` が `null` の場合は音声合成のみ失敗しています（テキストは利用可能）。
+- **500 Internal Server Error**: LLMの生成失敗やサーバー内部エラー。
+
+```json
+{
+  "detail": "Internal Server Error"
 }
 ```
